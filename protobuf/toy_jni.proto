@@ -1,0 +1,24 @@
+syntax = "proto3";
+
+package toy_jni;
+option java_package = "com.github.kgrech.toyjni.proto";
+option java_multiple_files = true;
+
+message Request {
+  string message = 1;
+  uint64 response_delay = 2;
+}
+
+message Response {
+
+  message Success {
+    string message = 1;
+  }
+
+  message Error {
+    string error_message = 1;
+  }
+
+  optional Success success = 1;
+  optional Error error = 2;
+}
