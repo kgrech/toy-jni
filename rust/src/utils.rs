@@ -1,9 +1,14 @@
+use crate::exception::throw_exception;
 use crate::proto::response::{Error, Success};
 use crate::proto::{Request, Response};
 use anyhow::Context;
-use jni::objects::{JByteArray, ReleaseMode};
+use jni::objects::{JByteArray, JObject, JValueOwned, ReleaseMode};
+use jni::signature::Primitive;
+use jni::sys::jlong;
 use jni::JNIEnv;
 use prost::Message;
+use std::ffi::c_void;
+use std::sync::Arc;
 
 pub trait MessageExt: Message + Default {
     fn encode_to_java<'a>(&self, env: &JNIEnv<'a>) -> anyhow::Result<JByteArray<'a>> {
@@ -41,6 +46,19 @@ pub fn handle_error<'a>(
     }
 }
 
+pub fn handle_error_exceptionally<'a, T>(
+    mut env: JNIEnv<'a>,
+    f: impl FnOnce(&mut JNIEnv<'a>) -> anyhow::Result<T>,
+) -> Option<T> {
+    match f(&mut env) {
+        Ok(obj) => Some(obj),
+        Err(error) => {
+            throw_exception(&mut env, error);
+            None
+        }
+    }
+}
+
 impl Request {
     pub fn message(message: String) -> Self {
         #[allow(clippy::needless_update)]
@@ -73,4 +91,32 @@ impl Response {
             ..Default::default()
         }
     }
+}
+
+/// Converts the value of the field into Arc without incrementing the Arc's ref counter.
+pub unsafe fn get_field<T>(
+    env: &mut JNIEnv,
+    j_object: &JObject,
+    field_name: &str,
+) -> anyhow::Result<Arc<T>> {
+    let field_value: JValueOwned = env
+        .get_field(j_object, field_name, Primitive::Long.to_string())
+        .with_context(|| format!("Can't get long value of the '{field_name}' field"))?;
+    let j_long_value: jlong = field_value
+        .j()
+        .with_context(|| format!("Wrong type of the '{field_name}' field."))?;
+    let ptr = j_long_value as *const c_void;
+    Ok(Arc::from_raw(ptr.cast()))
+}
+
+/// Converts the value of the field into Arc and increments the Arc's ref counter
+pub unsafe fn borrow_field<T>(
+    env: &mut JNIEnv,
+    j_object: &JObject,
+    field_name: &str,
+) -> anyhow::Result<Arc<T>> {
+    let handle: Arc<T> = get_field(env, j_object, field_name)?;
+    let clone = handle.clone();
+    std::mem::forget(handle);
+    Ok(clone)
 }

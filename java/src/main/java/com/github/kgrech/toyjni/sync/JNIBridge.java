@@ -1,12 +1,11 @@
 package com.github.kgrech.toyjni.sync;
 
+import com.github.kgrech.toyjni.JNILoader;
 import com.github.kgrech.toyjni.ToyJNIException;
 import com.github.kgrech.toyjni.proto.Request;
 import com.github.kgrech.toyjni.proto.Response;
 
-import java.util.concurrent.atomic.AtomicInteger;
-
-public class JNIBridge {
+public class JNIBridge extends JNILoader {
 
     static {
         System.loadLibrary("toy_jni");

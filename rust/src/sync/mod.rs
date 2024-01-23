@@ -5,6 +5,31 @@ use jni::objects::{GlobalRef, JByteArray, JObject, JValue};
 use jni::{JNIEnv, JavaVM};
 use std::time::Duration;
 
+fn handle_request(
+    j_object: &JObject,
+    env: &mut JNIEnv,
+    request: Request,
+) -> anyhow::Result<Response> {
+    let response = if request.message == "Hello, Rust!" {
+        if request.response_delay == 0 {
+            Response::success("Hello, Java!".into())
+        } else {
+            let context = CallbackContext::new(env, j_object)?;
+            std::thread::spawn(move || {
+                std::thread::sleep(Duration::from_millis(request.response_delay));
+                let response = context
+                    .callback(Request::message("Hello, Java!".into()))
+                    .expect("Callback error!");
+                println!("Response from callback: {response:?}")
+            });
+            Response::success("Will reply later!".into())
+        }
+    } else {
+        Response::error(format!("Unable to respond to '{}'", request.message))
+    };
+    Ok(response)
+}
+
 #[no_mangle]
 pub extern "system" fn Java_com_github_kgrech_toyjni_sync_JNIBridge_nativeCall<'a>(
     env: JNIEnv<'a>,
@@ -13,23 +38,7 @@ pub extern "system" fn Java_com_github_kgrech_toyjni_sync_JNIBridge_nativeCall<'
 ) -> JByteArray<'a> {
     handle_error(env, |env| {
         let request = Request::decode_from_java(env, &request)?;
-        let response = if request.message == "Hello, Rust!" {
-            if request.response_delay == 0 {
-                Response::success("Hello, Java!".into())
-            } else {
-                let context = CallbackContext::new(env, &j_object)?;
-                std::thread::spawn(move || {
-                    std::thread::sleep(Duration::from_millis(request.response_delay));
-                    let response = context
-                        .callback(Request::message("Hello, Java!".into()))
-                        .expect("Callback error!");
-                    println!("Response from callback: {response:?}")
-                });
-                Response::success("Will reply later!".into())
-            }
-        } else {
-            Response::error(format!("Unable to respond to '{}'", request.message))
-        };
+        let response = handle_request(&j_object, env, request)?;
         response.encode_to_java(env)
     })
 }
